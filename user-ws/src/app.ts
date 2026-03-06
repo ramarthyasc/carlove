@@ -1,4 +1,4 @@
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer, WebSocket as WebSocketWS } from 'ws';
 import http from 'http';
 import express from 'express';
 const app = express();
@@ -6,7 +6,7 @@ const server = http.createServer(app);
 
 const wss = new WebSocketServer({ server });
 interface Room {
-    sockets: Set<WebSocket>;
+    sockets: Set<WebSocketWS>;
 }
 
 const rooms: Record<string, Room> = {
@@ -22,13 +22,24 @@ interface IMessage {
     room: string;
     message: string;
 }
+
+const RELAY_HOST = "ws://localhost:5001";
+const wsRelay = new WebSocket(RELAY_HOST);
+
+wsRelay.onmessage = ({ data }) => {
+    const parsedData: IMessage = JSON.parse(data);
+    const room = parsedData.room;
+    if (!rooms[room]) return; // room will always be there bcs client had connected before messaging right/
+    rooms[room].sockets.forEach((socket) => socket.send(parsedData.message));
+}
+
+
 wss.on('connection', function connection(ws) {
     console.log("websocket client connected");
     ws.on('error', console.error);
 
     // ws only accepts string or binary
     ws.on('message', function message(data: string) {
-        console.log(rooms);
         const parsedData: IRoomCreate | IMessage = JSON.parse(data);
         const room = parsedData.room;
         if (parsedData.type === "join-room") {
@@ -44,9 +55,7 @@ wss.on('connection', function connection(ws) {
         }
 
         if (parsedData.type === "chat") {
-            const room = parsedData.room;
-            if (!rooms[room]) return;
-            rooms[room].sockets.forEach((ws) => ws.send(parsedData.message));
+            wsRelay.send(data);
         }
     });
 
