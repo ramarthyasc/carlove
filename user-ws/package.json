@@ -1,0 +1,34 @@
+{
+  "name": "user-ws",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon --exec tsx src/app.ts",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.4.1",
+    "@prisma/client": "^7.4.1",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "pg": "^8.19.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/pg": "^8.16.0",
+    "@types/ws": "^8.18.1",
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.14",
+    "prisma": "^7.4.1",
+    "ts-jest": "^29.4.6",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
