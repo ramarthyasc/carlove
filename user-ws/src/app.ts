@@ -1,6 +1,9 @@
 import { WebSocketServer, WebSocket as WebSocketWS } from 'ws';
 import http, { Server } from 'http';
 import express from 'express';
+import { createClient } from "redis";
+
+
 interface IRoomCreate {
     type: "join-room";
     room: string;
@@ -23,8 +26,9 @@ export type ClientMessage =
 interface Room {
     sockets: WebSocketWS[];
 }
+type ClientType = ReturnType<typeof createClient>;
 
-export default function createServer(port: number, relayHost: string) {
+export default async function createServer(port: number) {
     const app = express();
     const server = http.createServer(app);
 
@@ -33,16 +37,28 @@ export default function createServer(port: number, relayHost: string) {
     const rooms: Record<string, Room | undefined> = {
     }
 
+    const client = await createClient()
+        .on("error", (err) => console.log("Redis Client Error", err))
+        .connect();
 
-    const RELAY_HOST = relayHost;
-    const wsRelay = new WebSocket(RELAY_HOST);
+    const clientSub = client.duplicate();
+    await clientSub.connect();
+    // const RELAY_HOST = relayHost;
+    // const wsRelay = new WebSocket(RELAY_HOST);
+    //
+    // wsRelay.onmessage = ({ data }) => {
+    //     const parsedData: ClientMessage = JSON.parse(data);
+    //     const room = parsedData.room;
+    //     if (parsedData.type === "chat") {
+    //         rooms[room]?.sockets.forEach((socket) => socket.send(JSON.stringify(parsedData)));
+    //     }
+    // }
 
-    wsRelay.onmessage = ({ data }) => {
-        const parsedData: ClientMessage = JSON.parse(data);
+    function subscriptionHandler<T extends string>(message: T) {
+        const parsedData: ClientMessage = JSON.parse(message);
+
         const room = parsedData.room;
-        if (parsedData.type === "chat") {
-            rooms[room]?.sockets.forEach((socket) => socket.send(JSON.stringify(parsedData)));
-        }
+        rooms[room]?.sockets.forEach((socket) => socket.send(JSON.stringify(parsedData)));
     }
 
 
@@ -66,7 +82,9 @@ export default function createServer(port: number, relayHost: string) {
                     // this server. Because after that, even if there are clients joining the same room, then
                     // I don't need to tell relayer that this room is in this server again and again.
                     console.log("Created Room");
-                    wsRelay.send(JSON.stringify(parsedData));
+                    // wsRelay.send(JSON.stringify(parsedData));
+                    await clientSub.subscribe(room, subscriptionHandler);
+
                 }
                 rooms[room].sockets.push(ws);
                 (ws as any).room = parsedData.room;
@@ -75,13 +93,14 @@ export default function createServer(port: number, relayHost: string) {
             }
 
             if (parsedData.type === "chat") {
-                wsRelay.send(data.toString());
+                // wsRelay.send(data.toString());
+                await client.publish(room, JSON.stringify(parsedData));
             }
         });
 
         // When close event happens due to abrupt TCP disconnection due to Browser or the client being terminated
         // or when client closes the tcp connection gracefully
-        ws.on("close", (code, reason) => {
+        ws.on("close", async (code, reason) => {
             console.log("WS client closed with code: %d, reason: %s", code, reason);
             const room: string = (ws as any).room;
             if (!rooms[room]) { return; }
@@ -91,26 +110,27 @@ export default function createServer(port: number, relayHost: string) {
                 rooms[room] = undefined;
                 console.log("Rooms room1 is undefined right now");
                 // send message to relay server that room A is no longer in this server
-                const deleteRoom: IDeleteRoom = {
-                    type: "delete-room",
-                    room: room
-                }
-                wsRelay.send(JSON.stringify(deleteRoom));
+                // const deleteRoom: IDeleteRoom = {
+                //     type: "delete-room",
+                //     room: room
+                // }
+                // wsRelay.send(JSON.stringify(deleteRoom));
+                await clientSub.unsubscribe(room);
             }
         })
 
     });
 
-    app.get("/", (req, res) => {
+    app.get("/", (_, res) => {
         console.log("helooo");
         return res.send("heyy");
     })
 
 
-    return new Promise<[Server, WebSocketServer, WebSocket]>((res, rej) => {
+    return new Promise<[Server, WebSocketServer, ClientType, ClientType]>((res, _) => {
         const serverinstance = server.listen(port, () => {
             console.log("server running on ", port);
-            res([serverinstance, wss, wsRelay]);
+            res([serverinstance, wss, client, clientSub]);
         });
     })
 

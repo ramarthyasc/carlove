@@ -2,6 +2,7 @@ import type { WebSocketServer } from "ws";
 import createServer from "./testserver.js";
 import { Server } from "http";
 import { jest } from "@jest/globals";
+import { createClient } from "redis";
 
 interface IRoomCreate {
     type: "join-room";
@@ -12,23 +13,29 @@ interface IMessage {
     room: string;
     message: string;
 }
+type ClientType = ReturnType<typeof createClient>;
 // run servers
 const PORT1 = 8080;
 const PORT2 = 8081;
-const RELAY_HOST = "ws://localhost:8085";
+// const RELAY_HOST = "ws://localhost:8085";
 
 let server1: Server;
 let server2: Server;
 let wss1: WebSocketServer;
 let wss2: WebSocketServer;
-let wsRelay1: WebSocket;
-let wsRelay2: WebSocket;
+// let wsRelay1: WebSocket;
+// let wsRelay2: WebSocket;
+let client1: ClientType;
+let client1Sub: ClientType;
+let client2: ClientType;
+let client2Sub: ClientType;
+
 let ws1: WebSocket;
 let ws2: WebSocket;
 
 beforeAll(async () => {
-    [[server1, wss1, wsRelay1], [server2, wss2, wsRelay2]] =
-        await Promise.all([createServer(PORT1, RELAY_HOST), createServer(PORT2, RELAY_HOST)]);
+    [[server1, wss1, client1, client1Sub], [server2, wss2, client2, client2Sub]] =
+        await Promise.all([createServer(PORT1), createServer(PORT2)]);
 })
 
 //
@@ -82,8 +89,8 @@ describe("Chat application", () => {
 
     })
 
-    test("When all clients inside a room is disconnected in a Server, then messages to that room relayed from other \
-         servers shouldn't reach this Server", async () => {
+    test("When all clients exited from a room and that room is deleted from the Server, the messages to that room\
+         shouldn't reach this Server", async () => {
         const handler = jest.fn();
 
         //All clients disconnected from Room1 in Server2 , & when ws1 sends a message - which shouldn't reach
@@ -99,7 +106,8 @@ describe("Chat application", () => {
 
         //send message from ws1 client(which is in Room1)
         const p1msg = onmessagePromiseGen(ws1, { type: "chat", room: "Room 1", message: "hello ws2, are you there ??" });
-        wsRelay2.addEventListener("message", handler);
+        /////// wsRelay2.addEventListener("message", handler);
+        client2Sub.on("message", handler);
         ws1.send(JSON.stringify({ type: "chat", room: "Room 1", message: "hello ws2, are you there ??" }));
         //// msg should be recieved by ws1
         await p1msg;
@@ -109,13 +117,14 @@ describe("Chat application", () => {
 
 
         //// cleanup
-        wsRelay2.removeEventListener("message", handler);
+        // wsRelay2.removeEventListener("message", handler);
+        client2Sub.removeListener("message", handler);
         ////create ws2, join room again
         ws2 = new WebSocket(BACKEND_URL2);
-        await new Promise<void>((res, rej) => {
+        await new Promise<void>((res, _) => {
             ws2.onopen = () => (res());
         })
-        const pmsg = new Promise<void>((res, rej) => {
+        const pmsg = new Promise<void>((res, _) => {
             ws2.onmessage = () => (res())
         })
         ws2.send(JSON.stringify({ type: "join-room", room: "Room 1" }));
@@ -123,40 +132,6 @@ describe("Chat application", () => {
 
     })
 
-    test("One Websocket server goes down, then messages from other servers shouldn't try to relay to downed server", async () => {
-        const handler = jest.fn();
-        //Abruptly terminated ws server 
-
-        //Abruptly terminate wss2; ie; close the server's wsclient -> wsRelay2 (Server2 should be removed from 
-        //all Respective Rooms of Server2 in the Relayer)
-        const pRelayclose = new Promise<void>((res, rej) => {
-            wsRelay2.onclose = () => (res())
-        })
-        wsRelay2.close();
-        await pRelayclose;
-        // wait for the relay server to do the actions on close
-        await delay(200);
-
-        //send message again through ws1
-        const p1msg = onmessagePromiseGen(ws1, { type: "chat", room: "Room 1", message: "hello ws2, are you there ??" });
-        /////even if the wsRelay2 is closed, the object is referenced by wsRelay2 variable
-        wsRelay2.addEventListener("message", handler)
-        ws1.send(JSON.stringify({ type: "chat", room: "Room 1", message: "hello ws2, are you there ??" }));
-        await p1msg;
-        //// msg should not reach Server 2 &  (Server2 should be removed from all Respective 
-        // Rooms of Server2 in the Relayer)         --> Check the rooms being removed using consolelog in Relayer
-        await delay(200);
-        expect(handler).not.toHaveBeenCalled();
-
-
-        //cleanup
-        wsRelay2.removeEventListener("message", handler);
-        wsRelay2 = new WebSocket(RELAY_HOST);
-        await new Promise<void>((res, rej) => {
-            wsRelay2.onopen = () => (res())
-        })
-
-    })
 
     // WHEN i delete RoomA in websocket server, then it sends delete-room message to Relayer. After i 
     // delete the room in the Websocket server, just after that, if i receive chat message to room A, then
@@ -176,14 +151,16 @@ afterAll(async () => {
     await Promise.all([p1close, p2close]);
     // for the server's onclose callback to run (Because normally, onclose of client and server run independently 
     // after closing the TCP connection)
-    await new Promise<void>((res, rej) => {
+    await new Promise<void>((res, _) => {
         setTimeout(() => res(), 500);
     })
 
 
     // Closing the Relayer websockets
-    wsRelay1.close();
-    wsRelay2.close();
+    client1.close();
+    client1Sub.close();
+    client2.close();
+    client2Sub.close();
 
     //Closing the Websocket server which is still listening 
     // await Promise.all([wsServerCloser(wss1), wsServerCloser(wss2)]) 
@@ -206,7 +183,7 @@ afterAll(async () => {
 //
 
 function delay(ms: number) {
-    return new Promise((res, rej) => {
+    return new Promise((res, _) => {
         setTimeout(res, ms);
     })
 }
@@ -228,24 +205,24 @@ function onmessagePromiseGen(ws: WebSocket, expectedmsg: IRoomCreate | IMessage)
     })
 }
 async function servercloser(serverinstance: Server, port: typeof PORT1 | typeof PORT2) {
-    return new Promise<void>((res, rej) => {
+    return new Promise<void>((res, _) => {
         serverinstance.close(() => {
             console.log("Server is closed from port: ", port);
             res();
         })
     })
 }
-async function wsServerCloser(websocketServer: WebSocketServer) {
-    return new Promise<void>((res, rej) => {
-        websocketServer.close(() => {
-            console.log("WebSocket server is closed and stopped listening");
-            res();
-        })
-    })
-}
+// async function wsServerCloser(websocketServer: WebSocketServer) {
+//     return new Promise<void>((res, _) => {
+//         websocketServer.close(() => {
+//             console.log("WebSocket server is closed and stopped listening");
+//             res();
+//         })
+//     })
+// }
 
 function onclosePromiseGen(socket: WebSocket) {
-    return new Promise<void>((res, rej) => {
+    return new Promise<void>((res, _) => {
         socket.onclose = () => {
             console.log("Client Socket closed");
             res();
