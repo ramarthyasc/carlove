@@ -8,10 +8,10 @@ interface IRoomCreate {
     type: "join-room";
     room: string;
 }
-interface IDeleteRoom {
-    type: "delete-room";
-    room: string;
-}
+// interface IDeleteRoom {
+//     type: "delete-room";
+//     room: string;
+// }
 interface IMessage {
     type: "chat";
     room: string;
@@ -19,7 +19,6 @@ interface IMessage {
 }
 export type ClientMessage =
     | IRoomCreate
-    | IDeleteRoom
     | IMessage
 
 // use Map with Set as the value - the next time 
@@ -89,7 +88,8 @@ export default async function createServer(port: number) {
                 rooms[room].sockets.push(ws);
                 (ws as any).room = parsedData.room;
 
-                ws.send(JSON.stringify(parsedData));
+                // ws.send(JSON.stringify(parsedData)); 
+                await client.publish(room, JSON.stringify(parsedData));
             }
 
             if (parsedData.type === "chat") {
@@ -109,7 +109,8 @@ export default async function createServer(port: number) {
             if (!rooms[room].sockets.length) {
                 rooms[room] = undefined;
                 console.log("Rooms room1 is undefined right now");
-                // send message to relay server that room A is no longer in this server
+                // send message to relay server that room A is no longer in this server (Unsubscribe this server from 
+                // Room A)
                 // const deleteRoom: IDeleteRoom = {
                 //     type: "delete-room",
                 //     room: room
