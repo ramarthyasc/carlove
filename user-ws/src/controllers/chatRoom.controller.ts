@@ -23,8 +23,11 @@ export type ClientMessage =
     | IMessage
 
 
-export async function chatRoomOnMessage(rooms:Record<string, Room | undefined>, data: WebSocket.RawData, 
-                                        ws: WebSocket, { client, clientSub }: RedisClients) {
+export async function chatRoomOnMessage(rooms: Record<string, Room | undefined>, data: WebSocket.RawData,
+    ws: WebSocket, subscriptionHandler: (message: Buffer, channel: Buffer) => void,
+    { client, clientSub }: RedisClients) {
+        console.log("HEYYY", data.toString());
+
     const parsedData: ClientMessage = JSON.parse(data.toString());
     const room = parsedData.room;
 
@@ -39,7 +42,7 @@ export async function chatRoomOnMessage(rooms:Record<string, Room | undefined>, 
             // I don't need to tell relayer that this room is in this server again and again.
             console.log("Created Room");
             // wsRelay.send(JSON.stringify(parsedData));
-            await clientSub.subscribe(room, subscriptionHandler);
+            await clientSub.subscribe(room, subscriptionHandler, true);
 
         }
         rooms[room].sockets.push(ws);
@@ -55,17 +58,10 @@ export async function chatRoomOnMessage(rooms:Record<string, Room | undefined>, 
     }
 
 
-    function subscriptionHandler<T extends string>(message: T) {
-        const parsedData: ClientMessage = JSON.parse(message);
-
-        const room = parsedData.room;
-        console.log(rooms);
-        rooms[room]?.sockets.forEach((socket) => socket.send(JSON.stringify(parsedData)));
-    }
 }
 
-export async function chatRoomOnClose(rooms:Record<string, Room | undefined>, 
-                                      ws: WebSocket, code: number, reason: Buffer<ArrayBufferLike>,
+export async function chatRoomOnClose(rooms: Record<string, Room | undefined>,
+    ws: WebSocket, code: number, reason: Buffer<ArrayBufferLike>,
     { clientSub }: RedisClients) {
 
     console.log("WS client closed with code: %d, reason: %s", code, reason);

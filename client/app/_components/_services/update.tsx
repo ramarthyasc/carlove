@@ -1,12 +1,3 @@
-interface IPlayer {
-    x: number,
-    y: number,
-    vx: number,
-    vy: number
-}
-interface IGame {
-    car: IPlayer
-}
 // Add event listeners globally
 let rightPressed = false;
 let leftPressed = false;
@@ -64,32 +55,51 @@ export function setupHandles() {
 
 // State at Global scope
 let lastTime = 0;
-export let game: IGame = {
-    car: {
-        x: 50,
-        y: 50,
-        vx: 0.1, // constant speed
-        vy: 0.1, // constant speed
-    }
-};
+// export let game: IGame = {
+//     player: {
+//         x: 50,
+//         y: 50,
+//         vx: 0.1, // constant speed
+//         vy: 0.1, // constant speed
+//     }
+// };
+
+
+export interface IPlayerBin {
+    room: string;
+    playerid: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+}
 
 
 export default function update(tFrame: DOMHighResTimeStamp) {
-    const car = game.car;
+    const player: IPlayerBin = {
+        room: "",
+        playerid: 0,
+        x: 50,
+        y: 50,
+        vx: 0.1,
+        vy: 0.1,
+    }
     const dt = tFrame - lastTime;
     lastTime = tFrame;
 
     if (rightPressed) {
-        car.x += car.vx * dt;
+        player.x += player.vx * dt;
     }
     if (leftPressed) {
-        car.x -= car.vx * dt;
+        player.x -= player.vx * dt;
     }
     if (upPressed) {
-        car.y -= car.vy * dt;
+        player.y -= player.vy * dt;
     }
     if (downPressed) {
-        car.y += car.vy * dt;
+        player.y += player.vy * dt;
     }
+
+    return player;
 
 }
